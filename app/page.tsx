@@ -91,7 +91,56 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="relative overflow-hidden">
+      <section className="relative h-[80vh] min-h-[620px] flex items-center overflow-hidden">
+  <div className="absolute inset-0">
+    <Image
+      src="https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=2200&auto=format&fit=crop"
+      alt="Golfmatka Välimeren kentällä"
+      fill
+      priority
+      className="object-cover"
+    />
+    <div className="absolute inset-0 bg-gradient-to-r from-golfNavy/90 via-golfNavy/65 to-transparent" />
+  </div>
+
+  <div className="relative z-10 mx-auto w-full max-w-7xl px-6 py-24 text-white">
+    <div className="max-w-3xl">
+      <p className="mb-5 inline-flex rounded-full bg-white/15 px-5 py-2 text-sm font-black uppercase tracking-wide text-white backdrop-blur">
+        Golfmatkat helposti
+      </p>
+
+      <h1 className="text-5xl font-black leading-[0.95] tracking-tight md:text-7xl">
+        Helpoin tapa lähteä golfmatkalle
+      </h1>
+
+      <p className="mt-7 max-w-2xl text-xl font-semibold leading-relaxed text-white/90 md:text-2xl">
+        Kaikki on valmiina – lennot, hotelli, golf ja kuljetukset. Sinä keskityt peliin.
+      </p>
+
+      <div className="mt-9 flex flex-col gap-4 sm:flex-row">
+        <a
+          href="#matkat"
+          className="inline-flex items-center justify-center gap-3 rounded-xl bg-golfOrange px-8 py-4 text-lg font-black text-white shadow-soft hover:-translate-y-0.5 hover:bg-orange-500"
+        >
+          Katso matkat <ArrowRight className="h-5 w-5" />
+        </a>
+
+        <a
+          href="tel:+358401234567"
+          className="inline-flex items-center justify-center gap-3 rounded-xl border-2 border-white bg-white/10 px-8 py-4 text-lg font-black text-white backdrop-blur hover:bg-white hover:text-golfNavy"
+        >
+          <Phone className="h-5 w-5" /> Soita ja kysy lisää
+        </a>
+      </div>
+
+      <div className="mt-7 flex flex-wrap gap-3 text-sm font-bold text-white/95">
+        <span className="rounded-full bg-white/15 px-4 py-2 backdrop-blur">✓ Ei vuokra-autoa</span>
+        <span className="rounded-full bg-white/15 px-4 py-2 backdrop-blur">✓ Kentät lähellä</span>
+        <span className="rounded-full bg-white/15 px-4 py-2 backdrop-blur">✓ Sujuva kokonaisuus</span>
+      </div>
+    </div>
+  </div>
+</section>
         <div className="absolute inset-0">
           <Image src="https://images.unsplash.com/photo-1535131749006-b7f58c99034b?q=80&w=2200&auto=format&fit=crop" alt="Golfkenttä meren äärellä" fill priority className="object-cover" />
           <div className="absolute inset-0 bg-gradient-to-r from-white via-white/80 to-white/10" />
