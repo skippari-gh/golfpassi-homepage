@@ -10,8 +10,16 @@ jobs:
   verify-production:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
       - name: Wait for Vercel production deployment
-        run: sleep 45
+        run: sleep 35
 
       - name: Verify live Golfpassi data API
         shell: bash
