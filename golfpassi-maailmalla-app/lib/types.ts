@@ -1,0 +1,1 @@
+export type MapAssignment={assignment_id:string;leader_name:string;leader_image_url:string|null;leader_profile_url:string;trip_name:string;trip_url:string;country:string;destination_name:string;latitude:number;longitude:number;assignment_start:string;assignment_end:string;is_demo?:boolean}
