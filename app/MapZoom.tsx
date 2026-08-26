@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
 const STEP = 0.35;
+const LABEL_ZOOM = 1.55;
 
 export default function MapZoom() {
   useEffect(() => {
@@ -73,6 +74,8 @@ export default function MapZoom() {
 
       if (level) level.textContent = `${Math.round(zoom * 100)}%`;
       map!.classList.toggle('isZoomed', zoom > 1.01);
+      map!.dataset.zoomDetail = zoom >= LABEL_ZOOM ? 'true' : 'false';
+      map!.dataset.zoom = zoom.toFixed(2);
     }
 
     function setZoom(next: number, focalX?: number, focalY?: number) {
@@ -115,9 +118,7 @@ export default function MapZoom() {
       if ((event.target as HTMLElement).closest('.detail')) return;
       event.preventDefault();
       const rect = map!.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      setZoom(zoom + (event.deltaY < 0 ? 0.22 : -0.22), x, y);
+      setZoom(zoom + (event.deltaY < 0 ? 0.22 : -0.22), event.clientX - rect.left, event.clientY - rect.top);
     }
 
     function onPointerDown(event: PointerEvent) {
@@ -152,9 +153,7 @@ export default function MapZoom() {
       setZoom(zoom + 0.55, event.clientX - rect.left, event.clientY - rect.top);
     }
 
-    const observer = new MutationObserver(() => {
-      window.requestAnimationFrame(apply);
-    });
+    const observer = new MutationObserver(() => window.requestAnimationFrame(apply));
     observer.observe(map, { childList: true, subtree: true });
 
     controls.addEventListener('click', onControlsClick);
