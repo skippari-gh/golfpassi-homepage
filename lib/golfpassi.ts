@@ -32,7 +32,7 @@ export type Assignment = {
 }
 
 export type AuditIssue = {
-  type: 'location' | 'overlap' | 'long' | 'unverified' | 'duplicate'
+  type: 'location' | 'overlap' | 'long' | 'unverified' | 'duplicate' | 'source'
   leader?: string
   trip?: string
   place?: string
@@ -53,6 +53,7 @@ export type AuditReport = {
   longAssignments: AuditIssue[]
   unverifiedAssignments: AuditIssue[]
   duplicates: AuditIssue[]
+  sourceCollisions: AuditIssue[]
   severeCount: number
   warningCount: number
 }
@@ -83,7 +84,7 @@ const locationRules: Array<{ pattern: RegExp; value: Location }> = [
   { pattern: /aroeira/i, value: exact('Aroeira','Portugali',38.58,-9.19) },
   { pattern: /camporeal/i, value: exact('CampoReal','Portugali',39.04,-9.24) },
   { pattern: /cascais|quinta da marinha/i, value: exact('Cascais','Portugali',38.70,-9.42) },
-  { pattern: /obidos|praia d'el rey|praia del rey|royal obidos/i, value: exact('Óbidos','Portugali',39.36,-9.22) },
+  { pattern: /obidos|óbidos|praia d'el rey|praia del rey|royal obidos/i, value: exact('Óbidos','Portugali',39.36,-9.22) },
   { pattern: /algarve|vilamoura|dom pedro/i, value: exact('Vilamoura','Portugali',37.09,-8.12) },
   { pattern: /belek|sirene|titanic deluxe|sueno/i, value: exact('Belek','Turkki',36.86,31.05) },
   { pattern: /marrakech|tikida palmeraie/i, value: exact('Marrakech','Marokko',31.63,-8.00) },
@@ -103,7 +104,8 @@ const locationRules: Array<{ pattern: RegExp; value: Location }> = [
   { pattern: /bogogno/i, value: exact('Bogogno','Italia',45.66,8.53) },
   { pattern: /garda|lake garda/i, value: exact('Gardajärvi','Italia',45.57,10.55) },
   { pattern: /konopiste|konopiště/i, value: exact('Konopiště','Tšekki',49.78,14.65) },
-  { pattern: /beckenbauer|penning|bad griesbach|porsche golf/i, value: exact('Bad Griesbach','Saksa',48.45,13.19) },
+  { pattern: /octoberfest|oktoberfest|quellness|baijeri|beckenbauer|penning|bad griesbach|porsche golf/i, value: exact('Bad Griesbach','Saksa',48.45,13.19) },
+  { pattern: /otepaa|otepää|supergolf viro/i, value: exact('Otepää','Viro',58.06,26.50) },
   { pattern: /estonian golf|sea course|tallinn/i, value: exact('Tallinna','Viro',59.44,24.75) },
   { pattern: /visby/i, value: exact('Visby','Ruotsi',57.63,18.29) },
   { pattern: /kungsängen|bro hof/i, value: exact('Tukholma','Ruotsi',59.45,17.65) },
@@ -135,6 +137,10 @@ function decodeHtml(value:string) {
 function cleanText(value:string) {
   return decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' '))
     .replace(/\s+/g,' ').trim()
+}
+
+function normalized(value:string) {
+  return cleanText(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/^pro\s+/,'').replace(/[^a-z0-9]+/g,' ').trim()
 }
 
 function absoluteUrl(value:string, base:string) {
@@ -173,53 +179,40 @@ function extractProfiles(indexHtml:string):ProfileRef[] {
   return [...map.values()]
 }
 
-function chooseSrcFromTag(tag:string, base:string) {
-  for (const attr of ['data-lazy-src','data-src','src']) {
-    const m=tag.match(new RegExp(`${attr}=["']([^"']+)["']`,'i'))
-    const u=m && absoluteUrl(m[1],base)
-    if (u && !u.startsWith('data:')) return u
+function findProfileHeadingEnd(html:string,profile:ProfileRef) {
+  const target=normalized(profile.name)
+  const targetParts=target.split(' ').filter(p=>p.length>=3)
+  const re=/<h[1-4]\b[^>]*>([\s\S]*?)<\/h[1-4]>/gi
+  let match:RegExpExecArray|null
+  let best:{end:number;score:number}|null=null
+  while ((match=re.exec(html))) {
+    const text=normalized(match[1])
+    if (!text) continue
+    let score=0
+    if (text===target) score=100
+    else if (text.includes(target)) score=85
+    else if (targetParts.length>=2 && targetParts.every(p=>text.includes(p))) score=70
+    else continue
+    if (text.length>target.length+35) score-=15
+    if (!best || score>best.score || (score===best.score && re.lastIndex>best.end)) best={end:re.lastIndex,score}
   }
-  const srcset=tag.match(/srcset=["']([^"']+)["']/i)?.[1]
-  if (srcset) {
-    const entries=srcset.split(',').map(v=>v.trim().split(/\s+/)).filter(v=>v[0])
-    const best=entries.sort((a,b)=>(parseInt(b[1]||'0')||0)-(parseInt(a[1]||'0')||0))[0]
-    if (best) return absoluteUrl(best[0],base)
-  }
-  return null
+  return best?.end ?? -1
 }
 
-function extractProfileImage(html:string, profile:ProfileRef) {
-  const nameParts=profile.name.toLowerCase().split(/\s+/).filter(Boolean)
-  const headingRe=/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
-  let start=0, m:RegExpExecArray|null
-  while ((m=headingRe.exec(html))) {
-    const txt=cleanText(m[1]).toLowerCase()
-    if (nameParts.some(p=>p.length>3 && txt.includes(p))) { start=m.index; break }
-  }
-  const mukanaIndex=html.toLowerCase().indexOf('mukana matkoilla',start)
-  const end=mukanaIndex>start?mukanaIndex:Math.min(html.length,start+30000)
-  const segment=html.slice(start,end)
-  const candidates:Array<{url:string;score:number}> = []
-  const imgRe=/<img\b[^>]*>/gi
-  while ((m=imgRe.exec(segment))) {
-    const tag=m[0]
-    const url=chooseSrcFromTag(tag,profile.profileUrl)
-    if (!url) continue
-    const hay=decodeHtml(tag).toLowerCase()
-    let score=0
-    if (/wp-content\/uploads/i.test(url)) score+=6
-    if (nameParts.some(p=>p.length>3 && hay.includes(p))) score+=10
-    if (/portrait|profile|person|matkanjoht|pro-/i.test(hay)) score+=5
-    if (/logo|icon|spinner|placeholder|payment|flag|golfpassi-logo/i.test(`${url} ${hay}`)) score-=30
-    if (/\.svg(?:\?|$)/i.test(url)) score-=10
-    const w=Number(tag.match(/width=["']?(\d+)/i)?.[1]||0)
-    const h=Number(tag.match(/height=["']?(\d+)/i)?.[1]||0)
-    if (w>=200 || h>=200) score+=2
-    if (w&&h&&Math.abs(w-h)<Math.max(w,h)*0.45) score+=2
-    candidates.push({url,score})
-  }
-  candidates.sort((a,b)=>b.score-a.score)
-  return candidates[0] && candidates[0].score>=5 ? candidates[0].url : null
+function profileTripsSection(html:string,profile:ProfileRef) {
+  const headingEnd=findProfileHeadingEnd(html,profile)
+  if (headingEnd<0) return ''
+  const lower=html.toLowerCase()
+  const sectionStart=lower.indexOf('mukana matkoilla',headingEnd)
+  if (sectionStart<0) return ''
+  const possibleEnds=[
+    lower.indexOf('</main>',sectionStart),
+    lower.indexOf('<footer',sectionStart),
+    lower.indexOf('site-footer',sectionStart),
+    sectionStart+70000,
+  ].filter(index=>index>sectionStart)
+  const sectionEnd=Math.min(...possibleEnds,html.length)
+  return html.slice(sectionStart,sectionEnd)
 }
 
 function iso(day:number,month:number,year:number) {
@@ -239,18 +232,18 @@ function extractDateHits(textValue:string):DateHit[] {
     /(\d{1,2})\.\s*[–—-]\s*(\d{1,2})\.(\d{1,2})\.(\d{4})/g,
   ]
   patterns.forEach((re,patternIndex)=>{
-    let m:RegExpExecArray|null
-    while ((m=re.exec(text))) {
+    let match:RegExpExecArray|null
+    while ((match=re.exec(text))) {
       let start:string|null=null,end:string|null=null
       if (patternIndex===0) {
-        start=iso(+m[1],+m[2],+m[3]); end=iso(+m[4],+m[5],+m[6])
+        start=iso(+match[1],+match[2],+match[3]); end=iso(+match[4],+match[5],+match[6])
       } else if (patternIndex===1) {
-        const endYear=+m[5], startMonth=+m[2], endMonth=+m[4]
-        start=iso(+m[1],startMonth,startMonth>endMonth?endYear-1:endYear); end=iso(+m[3],endMonth,endYear)
+        const endYear=+match[5], startMonth=+match[2], endMonth=+match[4]
+        start=iso(+match[1],startMonth,startMonth>endMonth?endYear-1:endYear); end=iso(+match[3],endMonth,endYear)
       } else {
-        start=iso(+m[1],+m[3],+m[4]); end=iso(+m[2],+m[3],+m[4])
+        start=iso(+match[1],+match[3],+match[4]); end=iso(+match[2],+match[3],+match[4])
       }
-      if (start&&end&&end>=start) hits.push({start,end,index:m.index,length:m[0].length})
+      if (start&&end&&end>=start) hits.push({start,end,index:match.index,length:match[0].length})
     }
   })
   const unique=new Map<string,DateHit>()
@@ -270,54 +263,85 @@ function countryFrom(text:string,url:string) {
     [/turkki|\/turkki\//i,'Turkki'],[/marokko|\/marokko\//i,'Marokko'],[/mauritius/i,'Mauritius'],
     [/thaimaa/i,'Thaimaa'],[/vietnam/i,'Vietnam'],[/indonesia|bali/i,'Indonesia'],[/skotlanti|scotland/i,'Skotlanti'],
     [/bulgaria/i,'Bulgaria'],[/ranska|paris|pariisi/i,'Ranska'],[/italia/i,'Italia'],[/egypti|hurghada/i,'Egypti'],
-    [/pohjois-kypros/i,'Pohjois-Kypros'],[/kypros/i,'Kypros'],[/tšekki|tsekki/i,'Tšekki'],[/saksa/i,'Saksa'],
-    [/ruotsi/i,'Ruotsi'],[/suomi/i,'Suomi'],[/viro/i,'Viro']
+    [/pohjois-kypros/i,'Pohjois-Kypros'],[/kypros/i,'Kypros'],[/tšekki|tsekki/i,'Tšekki'],[/saksa|baijeri/i,'Saksa'],
+    [/ruotsi/i,'Ruotsi'],[/suomi/i,'Suomi'],[/viro|otepaa|otepää/i,'Viro']
   ]
   return pairs.find(([re])=>re.test(hay))?.[1]||'Tuntematon'
 }
 
-function resolveLocation(text:string,url:string):Location|null {
-  const hay=`${text} ${url}`
-  const found=locationRules.find(r=>r.pattern.test(hay))
-  if (found) return found.value
-  const country=countryFrom(text,url)
+function resolveLocation(primary:string,url:string,secondary=''):Location|null {
+  const primaryHay=`${primary} ${url}`
+  const primaryExact=locationRules.find(rule=>rule.pattern.test(primaryHay))
+  if (primaryExact) return primaryExact.value
+  if (secondary) {
+    const secondaryExact=locationRules.find(rule=>rule.pattern.test(secondary))
+    if (secondaryExact) return secondaryExact.value
+  }
+  const country=countryFrom(`${primary} ${secondary}`,url)
   const center=countryCenters[country]
   if (!center) return null
   return {place:country,country,lat:center.lat,lon:center.lon,accuracy:'country'}
 }
 
 function titleFromAnchor(text:string,url:string) {
-  let t=text.replace(/alk\.\s*[\d\s.,]+€.*$/i,' ').replace(/\d{1,2}\.\d{1,2}\.?(?:\d{4})?\s*[–—-].*$/,' ').replace(/\s+/g,' ').trim()
-  if (t.length>=4) return t.slice(0,140)
+  const cleaned=text.replace(/alk\.\s*[\d\s.,]+€.*$/i,' ').replace(/\s+/g,' ').trim()
+  if (cleaned.length>=4) return cleaned.slice(0,140)
   try { return decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop()||'Golfpassin matka').replace(/-/g,' ') } catch { return 'Golfpassin matka' }
 }
 
-function pageTitle(html:string,url:string) {
-  const h1=html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1]
-  const title=h1?cleanText(h1):''
-  return title || titleFromAnchor('',url)
+function isUsefulTitle(value:string) {
+  const text=value.trim()
+  if (text.length<5) return false
+  if (/^\d{1,2}\.\s*[–—-]\s*\d{1,2}\./.test(text)) return false
+  if (/^\d{1,2}\.\d{1,2}\.?\s*[–—-]/.test(text)) return false
+  return /[A-Za-zÅÄÖåäö]{4}/.test(text)
 }
 
-function extractTrips(profileHtml:string,profile:ProfileRef,imageUrl:string|null):Assignment[] {
-  const sectionIndex=profileHtml.toLowerCase().indexOf('mukana matkoilla')
-  const html=sectionIndex>=0?profileHtml.slice(sectionIndex):profileHtml
-  const anchors=extractAnchors(html)
+function pageTitle(html:string,url:string) {
+  const mainStart=Math.max(0,html.toLowerCase().indexOf('<main'))
+  const segment=html.slice(mainStart,Math.min(html.length,mainStart+80000))
+  const re=/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi
+  let match:RegExpExecArray|null
+  while ((match=re.exec(segment))) {
+    const title=cleanText(match[1])
+    if (isUsefulTitle(title) && !/matkan sisältö|matkan sisalto|hinta sisältää|hinta sisaltaa/i.test(title)) return title.slice(0,160)
+  }
+  return titleFromAnchor('',url)
+}
+
+function tripContentHtml(html:string) {
+  const lower=html.toLowerCase()
+  let start=lower.indexOf('<main')
+  if (start<0) {
+    const h1=lower.indexOf('<h1')
+    start=h1>=0?h1:0
+  }
+  const possibleEnds=[lower.indexOf('</main>',start),lower.indexOf('<footer',start),start+120000].filter(index=>index>start)
+  const end=Math.min(...possibleEnds,html.length)
+  return html.slice(start,end)
+}
+
+function extractTrips(profileHtml:string,profile:ProfileRef):Assignment[] {
+  const section=profileTripsSection(profileHtml,profile)
+  if (!section) return []
+  const anchors=extractAnchors(section)
   const byUrl=new Map<string,Assignment>()
-  for (const a of anchors) {
-    if (!/(\/pelimatkat\/|\/kurssimatkat\/)/i.test(a.href)) continue
-    const tripUrl=absoluteUrl(a.href,profile.profileUrl)
+  for (const anchor of anchors) {
+    if (!/(\/pelimatkat\/|\/kurssimatkat\/)/i.test(anchor.href)) continue
+    const tripUrl=absoluteUrl(anchor.href,profile.profileUrl)
     if (!tripUrl) continue
-    const near=cleanText(html.slice(Math.max(0,a.index-250),Math.min(html.length,a.index+a.html.length+850)))
-    const range=dateRange(a.text)||dateRange(near)
+    const near=cleanText(section.slice(Math.max(0,anchor.index-220),Math.min(section.length,anchor.index+anchor.html.length+700)))
+    const range=dateRange(anchor.text)||dateRange(near)
     if (!range?.start||!range?.end) continue
-    const location=resolveLocation(`${a.text} ${near}`,tripUrl)
+    if (daysBetween(range.start,range.end)>45) continue
+    const location=resolveLocation(anchor.text,tripUrl,near)
     if (!location) continue
-    const trip=titleFromAnchor(a.text,tripUrl)
+    const trip=titleFromAnchor(anchor.text,tripUrl)
     const candidate:Assignment={
       id:`${profile.name}|${tripUrl}|${range.start}|${range.end}`,
       leader:profile.name,place:location.place,country:location.country,trip,
       start:range.start,end:range.end,lat:location.lat,lon:location.lon,
-      profile:profile.profileUrl,tripUrl,imageUrl,tripVerified:false,tripPageChecked:false,
+      profile:profile.profileUrl,tripUrl,imageUrl:null,tripVerified:false,tripPageChecked:false,
       locationAccuracy:location.accuracy,
     }
     const previous=byUrl.get(tripUrl)
@@ -329,7 +353,7 @@ function extractTrips(profileHtml:string,profile:ProfileRef,imageUrl:string|null
 async function mapLimit<T,R>(items:T[],limit:number,worker:(item:T)=>Promise<R>):Promise<R[]> {
   const results=new Array<R>(items.length)
   let cursor=0
-  async function run(){ while(true){ const i=cursor++; if(i>=items.length)return; results[i]=await worker(items[i]) } }
+  async function run(){ while(true){ const index=cursor++; if(index>=items.length)return; results[index]=await worker(items[index]) } }
   await Promise.all(Array.from({length:Math.min(limit,items.length)},run))
   return results
 }
@@ -345,7 +369,7 @@ function leaderVariants(name:string) {
   if (surname.endsWith('nen')) variants.add(`${surname.slice(0,-3)}sen`)
   if (surname.endsWith('e')) variants.add(`${surname}n`)
   if (surname.endsWith('o')||surname.endsWith('a')||surname.endsWith('ä')) variants.add(`${surname}n`)
-  return [...variants].filter(v=>v.length>=4)
+  return [...variants].filter(value=>value.length>=4)
 }
 
 function verifyRangeFromTripPage(bodyText:string,assignment:Assignment) {
@@ -353,10 +377,10 @@ function verifyRangeFromTripPage(bodyText:string,assignment:Assignment) {
   const variants=leaderVariants(assignment.leader)
   const mentions:Array<{index:number;variant:string}>=[]
   for (const variant of variants) {
-    let pos=lower.indexOf(variant)
-    while (pos>=0) {
-      mentions.push({index:pos,variant})
-      pos=lower.indexOf(variant,pos+variant.length)
+    let position=lower.indexOf(variant)
+    while (position>=0) {
+      mentions.push({index:position,variant})
+      position=lower.indexOf(variant,position+variant.length)
     }
   }
   if (!mentions.length) return {verified:false,start:assignment.start,end:assignment.end}
@@ -380,7 +404,7 @@ function verifyRangeFromTripPage(bodyText:string,assignment:Assignment) {
 }
 
 async function enrichFromTripPages(assignments:Assignment[]) {
-  const urls=[...new Set(assignments.map(a=>a.tripUrl))]
+  const urls=[...new Set(assignments.map(assignment=>assignment.tripUrl))]
   const pages=await mapLimit(urls,10,async url=>{
     try { return [url,await fetchHtml(url)] as const }
     catch (error) { console.warn('Golfpassi trip sync failed',url,error); return [url,null] as const }
@@ -390,15 +414,16 @@ async function enrichFromTripPages(assignments:Assignment[]) {
     const html=pageMap.get(assignment.tripUrl)
     if (!html) return assignment
     const title=pageTitle(html,assignment.tripUrl)
-    const body=cleanText(html)
+    const contentHtml=tripContentHtml(html)
+    const body=cleanText(contentHtml)
     const verification=verifyRangeFromTripPage(body,assignment)
-    const pageLocation=resolveLocation(`${title} ${body.slice(0,5000)}`,assignment.tripUrl)
+    const pageLocation=resolveLocation(`${title} ${assignment.trip}`,assignment.tripUrl,body.slice(0,12000))
     const location=pageLocation || {
       place:assignment.place,country:assignment.country,lat:assignment.lat,lon:assignment.lon,accuracy:assignment.locationAccuracy,
     }
     return {
       ...assignment,
-      trip:title||assignment.trip,
+      trip:isUsefulTitle(title)?title:assignment.trip,
       start:verification.start,
       end:verification.end,
       tripVerified:verification.verified,
@@ -411,15 +436,15 @@ async function enrichFromTripPages(assignments:Assignment[]) {
 }
 
 function dayAfter(value:string) {
-  const d=new Date(`${value}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+1); return d.toISOString().slice(0,10)
+  const date=new Date(`${value}T00:00:00Z`); date.setUTCDate(date.getUTCDate()+1); return date.toISOString().slice(0,10)
 }
 
 function mergeAssignments(items:Assignment[]) {
   const groups=new Map<string,Assignment[]>()
-  for (const a of items) {
-    const key=`${a.leader}|${a.place}`
+  for (const assignment of items) {
+    const key=`${assignment.leader}|${assignment.place}`
     if (!groups.has(key)) groups.set(key,[])
-    groups.get(key)!.push(a)
+    groups.get(key)!.push(assignment)
   }
   const merged:Assignment[]=[]
   for (const group of groups.values()) {
@@ -428,7 +453,6 @@ function mergeAssignments(items:Assignment[]) {
     for (const item of group) {
       if (last && item.start<=dayAfter(last.end)) {
         if (item.end>last.end) last.end=item.end
-        if (!last.imageUrl&&item.imageUrl) last.imageUrl=item.imageUrl
         last.tripVerified=last.tripVerified||item.tripVerified
         last.tripPageChecked=last.tripPageChecked||item.tripPageChecked
         if (last.locationAccuracy==='country'&&item.locationAccuracy==='exact') {
@@ -453,38 +477,38 @@ function auditAssignments(assignments:Assignment[]):AuditReport {
   const longAssignments:AuditIssue[]=[]
   const unverifiedAssignments:AuditIssue[]=[]
   const duplicates:AuditIssue[]=[]
+  const sourceCollisions:AuditIssue[]=[]
   const exactKeys=new Set<string>()
 
-  for (const a of assignments) {
-    if (a.locationAccuracy!=='exact') unresolvedLocations.push({
-      type:'location',leader:a.leader,trip:a.trip,place:a.place,country:a.country,start:a.start,end:a.end,tripUrl:a.tripUrl,
-      detail:`Kohde käyttää maan keskipistettä: ${a.place}`,
+  for (const assignment of assignments) {
+    if (assignment.locationAccuracy!=='exact') unresolvedLocations.push({
+      type:'location',leader:assignment.leader,trip:assignment.trip,place:assignment.place,country:assignment.country,start:assignment.start,end:assignment.end,tripUrl:assignment.tripUrl,
+      detail:`Kohde käyttää maan keskipistettä: ${assignment.place}`,
     })
-    if (!a.tripVerified) unverifiedAssignments.push({
-      type:'unverified',leader:a.leader,trip:a.trip,place:a.place,start:a.start,end:a.end,tripUrl:a.tripUrl,
-      detail:a.tripPageChecked?'Vetäjän nimeä ei löytynyt matkasivulta':'Matkasivua ei saatu tarkistettua',
+    if (!assignment.tripVerified) unverifiedAssignments.push({
+      type:'unverified',leader:assignment.leader,trip:assignment.trip,place:assignment.place,start:assignment.start,end:assignment.end,tripUrl:assignment.tripUrl,
+      detail:assignment.tripPageChecked?'Vetäjän nimeä ei löytynyt matkasivulta':'Matkasivua ei saatu tarkistettua',
     })
-    if (daysBetween(a.start,a.end)>45) longAssignments.push({
-      type:'long',leader:a.leader,trip:a.trip,place:a.place,start:a.start,end:a.end,tripUrl:a.tripUrl,
-      detail:`Poikkeuksellisen pitkä vetäjäjakso (${daysBetween(a.start,a.end)+1} päivää)`,
+    if (daysBetween(assignment.start,assignment.end)>45) longAssignments.push({
+      type:'long',leader:assignment.leader,trip:assignment.trip,place:assignment.place,start:assignment.start,end:assignment.end,tripUrl:assignment.tripUrl,
+      detail:`Poikkeuksellisen pitkä vetäjäjakso (${daysBetween(assignment.start,assignment.end)+1} päivää)`,
     })
-    const key=`${a.leader}|${a.place}|${a.start}|${a.end}|${a.tripUrl}`
-    if (exactKeys.has(key)) duplicates.push({type:'duplicate',leader:a.leader,trip:a.trip,place:a.place,start:a.start,end:a.end,tripUrl:a.tripUrl,detail:'Täsmälleen sama jakso esiintyy useammin kuin kerran'})
+    const key=`${assignment.leader}|${assignment.place}|${assignment.start}|${assignment.end}|${assignment.tripUrl}`
+    if (exactKeys.has(key)) duplicates.push({type:'duplicate',leader:assignment.leader,trip:assignment.trip,place:assignment.place,start:assignment.start,end:assignment.end,tripUrl:assignment.tripUrl,detail:'Täsmälleen sama jakso esiintyy useammin kuin kerran'})
     exactKeys.add(key)
   }
 
   const byLeader=new Map<string,Assignment[]>()
-  for (const a of assignments) {
-    if (!byLeader.has(a.leader)) byLeader.set(a.leader,[])
-    byLeader.get(a.leader)!.push(a)
+  for (const assignment of assignments) {
+    if (!byLeader.has(assignment.leader)) byLeader.set(assignment.leader,[])
+    byLeader.get(assignment.leader)!.push(assignment)
   }
   for (const [leader,items] of byLeader) {
     const sorted=[...items].sort((a,b)=>a.start.localeCompare(b.start))
     for (let i=0;i<sorted.length;i++) {
       for (let j=i+1;j<sorted.length;j++) {
         if (sorted[j].start>sorted[i].end) break
-        if (!overlaps(sorted[i],sorted[j])) continue
-        if (sorted[i].place===sorted[j].place) continue
+        if (!overlaps(sorted[i],sorted[j])||sorted[i].place===sorted[j].place) continue
         overlapIssues.push({
           type:'overlap',leader,start:sorted[j].start,end:sorted[i].end<sorted[j].end?sorted[i].end:sorted[j].end,
           detail:`Sama vetäjä kahdessa eri kohteessa: ${sorted[i].place} / ${sorted[j].place}`,
@@ -494,17 +518,43 @@ function auditAssignments(assignments:Assignment[]):AuditReport {
     }
   }
 
+  const byTrip=new Map<string,Assignment[]>()
+  for (const assignment of assignments) {
+    if (!byTrip.has(assignment.tripUrl)) byTrip.set(assignment.tripUrl,[])
+    byTrip.get(assignment.tripUrl)!.push(assignment)
+  }
+  for (const [tripUrl,items] of byTrip) {
+    const leaders=[...new Set(items.map(item=>item.leader))]
+    const verifiedLeaders=new Set(items.filter(item=>item.tripVerified).map(item=>item.leader))
+    if (leaders.length>=5 && verifiedLeaders.size<Math.ceil(leaders.length/2)) {
+      sourceCollisions.push({
+        type:'source',trip:items[0]?.trip,place:items[0]?.place,tripUrl,
+        detail:`Sama matkalinkki päätyi epäilyttävästi ${leaders.length} vetäjälle: ${leaders.slice(0,8).join(', ')}${leaders.length>8?'…':''}`,
+      })
+    }
+  }
+
+  for (const assignment of assignments) {
+    if (daysBetween(assignment.start,assignment.end)>60 && !assignment.tripVerified) {
+      sourceCollisions.push({
+        type:'source',leader:assignment.leader,trip:assignment.trip,place:assignment.place,start:assignment.start,end:assignment.end,tripUrl:assignment.tripUrl,
+        detail:'Yli 60 päivän jaksoa ei voitu vahvistaa matkasivulta',
+      })
+    }
+  }
+
   return {
     generatedAt:new Date().toISOString(),
     totalAssignments:assignments.length,
-    exactLocations:assignments.filter(a=>a.locationAccuracy==='exact').length,
-    tripVerified:assignments.filter(a=>a.tripVerified).length,
+    exactLocations:assignments.filter(assignment=>assignment.locationAccuracy==='exact').length,
+    tripVerified:assignments.filter(assignment=>assignment.tripVerified).length,
     unresolvedLocations,
     overlaps:overlapIssues,
     longAssignments,
     unverifiedAssignments,
     duplicates,
-    severeCount:unresolvedLocations.length+overlapIssues.length+duplicates.length,
+    sourceCollisions,
+    severeCount:unresolvedLocations.length+overlapIssues.length+duplicates.length+sourceCollisions.length,
     warningCount:longAssignments.length+unverifiedAssignments.length,
   }
 }
@@ -517,8 +567,7 @@ export async function getGolfpassiData() {
   const profileBatches=await mapLimit(profiles,8,async profile=>{
     try {
       const html=await fetchHtml(profile.profileUrl)
-      const imageUrl=extractProfileImage(html,profile)
-      return extractTrips(html,profile,imageUrl)
+      return extractTrips(html,profile)
     } catch (error) {
       console.warn('Golfpassi profile sync failed',profile.profileUrl,error)
       return [] as Assignment[]
@@ -529,9 +578,9 @@ export async function getGolfpassiData() {
   const today=new Date().toISOString().slice(0,10)
   const horizon=new Date(); horizon.setUTCDate(horizon.getUTCDate()+620)
   const horizonIso=horizon.toISOString().slice(0,10)
-  const relevant=candidates.filter(a=>a.end>=today && a.start<=horizonIso)
+  const relevant=candidates.filter(assignment=>assignment.end>=today && assignment.start<=horizonIso)
   const enriched=await enrichFromTripPages(relevant)
-  const assignments=mergeAssignments(enriched).filter(a=>a.end>=today && a.start<=horizonIso)
+  const assignments=mergeAssignments(enriched).filter(assignment=>assignment.end>=today && assignment.start<=horizonIso)
   const audit=auditAssignments(assignments)
   return {assignments,audit}
 }
