@@ -55,6 +55,7 @@ export default function Page() {
   const [selected,setSelected]=useState(null)
   const [dataMode,setDataMode]=useState('loading')
   const [updatedAt,setUpdatedAt]=useState(null)
+  const [audit,setAudit]=useState(null)
 
   useEffect(()=>{
     let cancelled=false
@@ -68,6 +69,7 @@ export default function Page() {
         setAssignments(payload.assignments)
         setDataMode('live')
         setUpdatedAt(payload.updatedAt||null)
+        setAudit(payload.audit||null)
       })
       .catch(()=>{ if(!cancelled) setDataMode('fallback') })
     return ()=>{ cancelled=true }
@@ -93,7 +95,7 @@ export default function Page() {
 
         {active.map((t,i)=>{
           const pos=markerOffset(active,i), avatar=avatarUrl(t)
-          return <button key={t.id||`${t.leader}-${t.start}-${t.place}`} className="marker" style={{left:`${pos.x}%`,top:`${pos.y}%`}} onClick={()=>setSelected(t)}>
+          return <button key={t.id||`${t.leader}-${t.start}-${t.place}`} className="marker" style={{left:`${pos.x}%`,top:`${pos.y}%`}} onClick={()=>setSelected(t)} aria-label={`${t.leader}, ${t.place}`} title={`${t.leader} · ${t.place}`}>
             <span className="avatar">{avatar?<img src={avatar} alt="" onError={e=>{e.currentTarget.style.display='none'}}/>:null}<span className="avatarFallback">{initials(t.leader)}</span></span>
             <span className="markerLabel"><strong>{t.leader}</strong><small>{t.place}</small></span>
           </button>
@@ -109,7 +111,7 @@ export default function Page() {
       </section>
 
       <div className="nav"><button className="arrow" onClick={()=>chooseDate(addDays(selectedDate,-7))}>←</button><div className="days">{days.map(date=>{const d=parseDate(date),has=assignments.some(t=>date>=t.start&&date<=t.end);return <button key={date} className={`day ${date===selectedDate?'active':''} ${has?'has':''}`} onClick={()=>chooseDate(date)}><span>{new Intl.DateTimeFormat('fi-FI',{weekday:'short',timeZone:'UTC'}).format(d)}</span><b>{d.getUTCDate()}</b><i/></button>})}</div><button className="arrow" onClick={()=>chooseDate(addDays(selectedDate,7))}>→</button></div>
-      <p className="caption">Klikkaa ihmistä. Ei raportteja – vain kuka on missä. <span className={`dataState ${dataMode}`}>{dataMode==='live'?'● Golfpassi.fi live':dataMode==='loading'?'○ Päivitetään…':'○ Varadata käytössä'}</span></p>
+      <p className="caption">Klikkaa ihmistä. Ei raportteja – vain kuka on missä. <span className={`dataState ${dataMode}`}>{dataMode==='live'?'● Golfpassi.fi live':dataMode==='loading'?'○ Päivitetään…':'○ Varadata käytössä'}</span>{audit?<span className={`qualityState ${audit.severeCount>0?'warn':'ok'}`}>{audit.severeCount>0?`⚠ ${audit.severeCount} datatarkistus`: '✓ data tarkistettu'}</span>:null}</p>
     </main>
   )
 }
