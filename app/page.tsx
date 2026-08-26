@@ -46,7 +46,11 @@ function markerOffset(items,index) {
   const [dx,dy]=offsets[nearby%offsets.length]
   return {x:current.x+dx,y:current.y+dy}
 }
-function avatarUrl(item) { return item.imageUrl ? `/api/avatar?url=${encodeURIComponent(item.imageUrl)}` : null }
+function avatarUrl(item) {
+  if(item.imageUrl) return `/api/avatar?url=${encodeURIComponent(item.imageUrl)}`
+  if(item.profile&&item.leader) return `/api/avatar?profile=${encodeURIComponent(item.profile)}&name=${encodeURIComponent(item.leader)}`
+  return null
+}
 
 export default function Page() {
   const today=todayInHelsinki()
