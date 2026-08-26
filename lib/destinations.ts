@@ -43,7 +43,7 @@ const rules:Array<{pattern:RegExp;value:Location}>=[
   {pattern:/agadir|tikida dunas/i,value:exact('Agadir','Marokko',30.42,-9.60)},
   {pattern:/marrakech|tikida palmeraie/i,value:exact('Marrakech','Marokko',31.63,-8.00)},
   {pattern:/tamarina|mauritius/i,value:exact('Mauritius','Mauritius',-20.28,57.38)},
-  {pattern:/korineum|pohjois-kypros/i,value:exact('Korineum','Pohjois-Kypros',35.34,33.57)},
+  {pattern:/korineum|pohjois kypros/i,value:exact('Korineum','Pohjois-Kypros',35.34,33.57)},
   {pattern:/aroeira/i,value:exact('Aroeira','Portugali',38.58,-9.19)},
   {pattern:/camporeal/i,value:exact('CampoReal','Portugali',39.04,-9.24)},
   {pattern:/vilamoura|hilton vilamoura|dom pedro/i,value:exact('Vilamoura','Portugali',37.09,-8.12)},
@@ -79,7 +79,7 @@ function anchors(html:string){const out:Array<{href:string;text:string}>=[];cons
 function isTripUrl(url:string){try{const p=new URL(url).pathname;return /^\/(?:pelimatkat|kurssimatkat)\/[^/]+\/[^/]+\/?$/i.test(p)&&!p.includes('/matkatyypit/')}catch{return false}}
 function titleScore(text:string){let s=Math.min(text.length,100);if(/hotel|resort|golf|stay|nairobi|hua hin|st andrews|kapkaupunki|tahko/i.test(text))s+=60;if(/laadukas|resortloma|puolihoito|uutuus|alkaen|alk\.|€|golf \+ ranta/i.test(text))s-=80;return s}
 function countryFromUrl(url:string){try{const slug=new URL(url).pathname.split('/').filter(Boolean)[1]||'';const map:Record<string,string>={bulgaria:'Bulgaria',egypti:'Egypti',englanti:'Englanti',espanja:'Espanja','etela-afrikka':'Etelä-Afrikka',indonesia:'Indonesia',italia:'Italia',kenia:'Kenia',kreikka:'Kreikka',kypros:'Kypros',marokko:'Marokko',mauritius:'Mauritius','pohjois-kypros':'Pohjois-Kypros',portugali:'Portugali',ranska:'Ranska',saksa:'Saksa',skotlanti:'Skotlanti',suomi:'Suomi',thaimaa:'Thaimaa',turkki:'Turkki','tsekki':'Tšekki',vietnam:'Vietnam',viro:'Viro',kanariansaaret:'Espanja'};return map[slug]||''}catch{return''}}
-function resolveLocations(text:string,url:string){const hay=`${text} ${decodeURIComponent(url)}`;const found=rules.filter(r=>r.pattern.test(hay)).map(r=>r.value);const unique=new Map(found.map(v=>[`${v.place}|${v.country}`,v]));if(unique.size)return [...unique.values()];const country=countryFromUrl(url);const c=countryCenters[country];return c?[{place:country,country,lat:c.lat,lon:c.lon,accuracy:'country' as const}]:[]}
+function resolveLocations(text:string,url:string){const normalizedUrl=decodeURIComponent(url).replace(/[-_]+/g,' ');const hay=`${text} ${normalizedUrl}`;const found=rules.filter(r=>r.pattern.test(hay)).map(r=>r.value);const unique=new Map(found.map(v=>[`${v.place}|${v.country}`,v]));if(unique.size)return [...unique.values()];const country=countryFromUrl(url);const c=countryCenters[country];return c?[{place:country,country,lat:c.lat,lon:c.lon,accuracy:'country' as const}]:[]}
 
 export async function getGolfpassiDestinations():Promise<Destination[]>{
   const pages=await Promise.all(CATALOG_URLS.map(async url=>{try{return await fetchHtml(url)}catch(error){console.warn('Destination catalog failed',url,error);return''}}))
