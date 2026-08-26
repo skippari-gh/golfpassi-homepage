@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import MapZoom from "./MapZoom";
 
 export const metadata: Metadata = {
   title: "Golfpassi maailmalla",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fi">
-      <body>{children}</body>
+      <body>
+        {children}
+        <MapZoom />
+      </body>
     </html>
   );
 }
