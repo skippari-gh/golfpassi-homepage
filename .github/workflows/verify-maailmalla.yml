@@ -84,7 +84,7 @@ jobs:
                   if item.get(key) is None or item.get(key)=='': raise SystemExit(f"Destination missing {key}: {item}")
           exact=sum(x.get('accuracy')=='exact' for x in items)
           print(f"Verified {len(items)} Golfpassi destination points; {exact} exact")
-          if exact < int(len(items)*0.8): raise SystemExit(f"Too many approximate destination points: {exact}/{len(items)}")
+          if exact != len(items): raise SystemExit(f"Every destination must be exact: {exact}/{len(items)}")
           PY
 
       - name: Verify profile avatar resolver
