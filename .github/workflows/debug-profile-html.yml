@@ -1,0 +1,24 @@
+name: Debug Golfpassi profile HTML
+
+on:
+  push:
+    branches:
+      - golfpassi-maailmalla-preview
+
+jobs:
+  inspect-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect Anu Alppi image markup
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L -sS -A 'Mozilla/5.0' https://golfpassi.fi/hyva-tietaa/matkanjohtajat/anu-alppi/ > /tmp/anu.html
+          echo '--- image tags containing anu / alppi / profile / matkan ---'
+          grep -ioE '<img[^>]+>' /tmp/anu.html | grep -iE 'anu|alppi|profile|matkan|pro' | head -40 || true
+          echo '--- first 40 wp-content image tags ---'
+          grep -ioE '<img[^>]+>' /tmp/anu.html | grep -i 'wp-content/uploads' | head -40 || true
+          echo '--- background urls near anu ---'
+          grep -ioE 'url\([^)]+' /tmp/anu.html | grep -i 'wp-content/uploads' | head -40 || true
+          echo '--- image-like URLs containing anu ---'
+          grep -ioE 'https?[^"'"' ]+\.(jpg|jpeg|png|webp)(\?[^"'"' ]*)?' /tmp/anu.html | grep -iE 'anu|alppi' | head -40 || true
