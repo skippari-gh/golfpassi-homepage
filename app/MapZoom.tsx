@@ -42,7 +42,7 @@ export default function MapZoom() {
     }
 
     function prepareMarkers() {
-      map!.querySelectorAll<HTMLElement>('.marker').forEach((marker) => {
+      map!.querySelectorAll<HTMLElement>('.marker,.destinationDot').forEach((marker) => {
         if (!marker.dataset.baseLeft) marker.dataset.baseLeft = marker.style.left || '50%';
         if (!marker.dataset.baseTop) marker.dataset.baseTop = marker.style.top || '50%';
       });
@@ -61,7 +61,7 @@ export default function MapZoom() {
         world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
       }
 
-      map!.querySelectorAll<HTMLElement>('.marker').forEach((marker) => {
+      map!.querySelectorAll<HTMLElement>('.marker,.destinationDot').forEach((marker) => {
         const baseLeft = parseFloat(marker.dataset.baseLeft || '50');
         const baseTop = parseFloat(marker.dataset.baseTop || '50');
         const baseX = (baseLeft / 100) * width;
@@ -123,7 +123,7 @@ export default function MapZoom() {
 
     function onPointerDown(event: PointerEvent) {
       if (zoom <= 1.01) return;
-      if ((event.target as HTMLElement).closest('.marker,.detail,.live,.mapZoomControls')) return;
+      if ((event.target as HTMLElement).closest('.marker,.destinationDot,.detail,.live,.mapZoomControls')) return;
       dragging = true;
       dragStartX = event.clientX;
       dragStartY = event.clientY;
@@ -148,7 +148,7 @@ export default function MapZoom() {
     }
 
     function onDoubleClick(event: MouseEvent) {
-      if ((event.target as HTMLElement).closest('.marker,.detail,.live,.mapZoomControls')) return;
+      if ((event.target as HTMLElement).closest('.marker,.destinationDot,.detail,.live,.mapZoomControls')) return;
       const rect = map!.getBoundingClientRect();
       setZoom(zoom + 0.55, event.clientX - rect.left, event.clientY - rect.top);
     }
