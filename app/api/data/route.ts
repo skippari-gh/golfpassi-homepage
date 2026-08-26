@@ -1,4 +1,5 @@
 import { getGolfpassiData } from '../../../lib/golfpassi'
+import { normalizeProductionData } from '../../../lib/production-normalize'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -6,7 +7,8 @@ export const maxDuration = 60
 
 export async function GET() {
   try {
-    const { assignments, audit } = await getGolfpassiData()
+    const raw = await getGolfpassiData()
+    const { assignments, audit } = normalizeProductionData(raw.assignments,raw.audit)
     return Response.json(
       { ok:true, source:'golfpassi.fi', updatedAt:new Date().toISOString(), assignments, audit },
       { headers:{ 'Cache-Control':'public, s-maxage=21600, stale-while-revalidate=86400' } }
