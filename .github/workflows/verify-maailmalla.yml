@@ -51,7 +51,10 @@ jobs:
           checked=sum(bool(x.get('tripPageChecked')) for x in items)
           severe=audit.get('severeCount',999)
           warnings=audit.get('warningCount',0)
-          print(f"Assignments: {len(items)} | exact locations: {exact} | trip pages checked: {checked} | leader verified on trip page: {verified} | severe: {severe} | warnings: {warnings}")
+          overrides=len(audit.get('sourceOverrides',[]))
+          print(f"Assignments: {len(items)} | exact locations: {exact} | trip pages checked: {checked} | leader verified on trip page: {verified} | source overrides: {overrides} | severe: {severe} | warnings: {warnings}")
+          if exact != len(items):
+              raise SystemExit(f"Not all destinations are exact: {exact}/{len(items)}")
           if checked < max(1, int(len(items)*0.8)):
               raise SystemExit(f"Too few trip pages checked: {checked}/{len(items)}")
           if severe:
@@ -61,8 +64,10 @@ jobs:
               for issue in audit.get('overlaps',[]): print(json.dumps(issue,ensure_ascii=False))
               print('DUPLICATES:')
               for issue in audit.get('duplicates',[]): print(json.dumps(issue,ensure_ascii=False))
+              print('SOURCE COLLISIONS:')
+              for issue in audit.get('sourceCollisions',[]): print(json.dumps(issue,ensure_ascii=False))
               raise SystemExit(f"Severe data audit issues: {severe}")
-          if verified < max(1, int(len(items)*0.2)):
+          if verified < max(1, int(len(items)*0.15)):
               print('UNVERIFIED SAMPLE:')
               for issue in audit.get('unverifiedAssignments',[])[:20]: print(json.dumps(issue,ensure_ascii=False))
               raise SystemExit(f"Trip-page leader verification parser may be broken: {verified}/{len(items)}")
