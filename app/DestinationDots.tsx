@@ -4,12 +4,6 @@ import { useEffect } from 'react'
 
 type Destination={id:string;place:string;country:string;lat:number;lon:number;accuracy:'exact'|'country';tripCount:number}
 
-function point(lat:number,lon:number){
-  const x=Math.max(3,Math.min(97,(lon+180)/360*100))
-  const y=Math.max(6,Math.min(92,56.7-(lat*0.637)))
-  return {x,y}
-}
-
 export default function DestinationDots(){
   useEffect(()=>{
     const map=document.querySelector<HTMLElement>('.map')
@@ -23,12 +17,16 @@ export default function DestinationDots(){
         if(!Array.isArray(payload.destinations))return
         const fragment=document.createDocumentFragment()
         nodes=payload.destinations.map((d:Destination)=>{
-          const pos=point(d.lat,d.lon)
           const button=document.createElement('button')
           button.type='button'
           button.className=`destinationDot ${d.accuracy==='exact'?'exact':'approximate'}`
-          button.style.left=`${pos.x}%`
-          button.style.top=`${pos.y}%`
+          button.style.left='50%'
+          button.style.top='50%'
+          button.style.visibility='hidden'
+          button.dataset.lat=String(d.lat)
+          button.dataset.lon=String(d.lon)
+          button.dataset.place=d.place
+          button.dataset.country=d.country
           button.dataset.label=`${d.place}, ${d.country}`
           button.setAttribute('aria-label',`Golfpassin kohde: ${d.place}, ${d.country}`)
           button.title=`${d.place}, ${d.country}`
