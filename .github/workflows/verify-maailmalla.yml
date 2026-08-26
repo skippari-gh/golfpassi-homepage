@@ -19,16 +19,16 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Wait for Vercel production deployment
-        run: sleep 35
+        run: sleep 45
 
-      - name: Verify live Golfpassi data API
+      - name: Verify live Golfpassi data and audit
         shell: bash
         run: |
           set -euo pipefail
-          for i in {1..8}; do
-            code=$(curl -L -sS -o /tmp/data.json -w "%{http_code}" https://golfpassi-maailmalla.vercel.app/api/data || true)
+          for i in {1..10}; do
+            code=$(curl -L -sS --max-time 75 -o /tmp/data.json -w "%{http_code}" https://golfpassi-maailmalla.vercel.app/api/data || true)
             if [ "$code" = "200" ]; then break; fi
-            echo "API returned $code, retry $i/8"
+            echo "API returned $code, retry $i/10"
             sleep 10
           done
           python3 - <<'PY'
@@ -45,8 +45,28 @@ jobs:
               missing=[k for k in required if not item.get(k)]
               if missing: raise SystemExit(f"Missing fields {missing}: {item}")
           images=sum(bool(x.get('imageUrl')) for x in items)
-          print(f"Verified {len(items)} assignments; {images} with profile images")
-          if images < 1: raise SystemExit('No profile images detected')
+          audit=data.get('audit') or {}
+          exact=audit.get('exactLocations',0)
+          verified=audit.get('tripVerified',0)
+          severe=audit.get('severeCount',999)
+          warnings=audit.get('warningCount',0)
+          print(f"Assignments: {len(items)} | images: {images} | exact locations: {exact} | trip-page verified: {verified} | severe: {severe} | warnings: {warnings}")
+          if images < max(1, int(len(items)*0.8)):
+              raise SystemExit(f"Too few profile images: {images}/{len(items)}")
+          if severe:
+              print('UNRESOLVED LOCATIONS:')
+              for issue in audit.get('unresolvedLocations',[]): print(json.dumps(issue,ensure_ascii=False))
+              print('OVERLAPS:')
+              for issue in audit.get('overlaps',[]): print(json.dumps(issue,ensure_ascii=False))
+              print('DUPLICATES:')
+              for issue in audit.get('duplicates',[]): print(json.dumps(issue,ensure_ascii=False))
+              raise SystemExit(f"Severe data audit issues: {severe}")
+          if verified < max(1, int(len(items)*0.5)):
+              print('UNVERIFIED SAMPLE:')
+              for issue in audit.get('unverifiedAssignments',[])[:20]: print(json.dumps(issue,ensure_ascii=False))
+              raise SystemExit(f"Too few trip-page verified assignments: {verified}/{len(items)}")
+          print('LONG / UNVERIFIED WARNINGS:')
+          for issue in (audit.get('longAssignments',[])+audit.get('unverifiedAssignments',[]))[:30]: print(json.dumps(issue,ensure_ascii=False))
           PY
 
       - name: Verify production page
