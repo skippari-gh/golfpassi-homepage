@@ -58,24 +58,33 @@ jobs:
           if checked < max(1, int(len(items)*0.8)):
               raise SystemExit(f"Too few trip pages checked: {checked}/{len(items)}")
           if severe:
-              print('UNRESOLVED LOCATIONS:')
-              for issue in audit.get('unresolvedLocations',[]): print(json.dumps(issue,ensure_ascii=False))
-              print('OVERLAPS:')
-              for issue in audit.get('overlaps',[]): print(json.dumps(issue,ensure_ascii=False))
-              print('DUPLICATES:')
-              for issue in audit.get('duplicates',[]): print(json.dumps(issue,ensure_ascii=False))
-              print('SOURCE COLLISIONS:')
-              for issue in audit.get('sourceCollisions',[]): print(json.dumps(issue,ensure_ascii=False))
               raise SystemExit(f"Severe data audit issues: {severe}")
           if verified < max(1, int(len(items)*0.15)):
-              print('UNVERIFIED SAMPLE:')
-              for issue in audit.get('unverifiedAssignments',[])[:20]: print(json.dumps(issue,ensure_ascii=False))
               raise SystemExit(f"Trip-page leader verification parser may be broken: {verified}/{len(items)}")
-          print('LONG / UNVERIFIED WARNINGS:')
-          for issue in (audit.get('longAssignments',[])+audit.get('unverifiedAssignments',[]))[:30]: print(json.dumps(issue,ensure_ascii=False))
           sample=items[0]
           query=urllib.parse.urlencode({'profile':sample['profile'],'name':sample['leader']})
           Path('/tmp/avatar-url.txt').write_text('https://golfpassi-maailmalla.vercel.app/api/avatar?'+query)
+          PY
+
+      - name: Verify Golfpassi destination layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -L -sS --max-time 75 -o /tmp/destinations.json -w "%{http_code}" https://golfpassi-maailmalla.vercel.app/api/destinations)
+          test "$code" = "200"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/destinations.json').read_text())
+          if not data.get('ok'): raise SystemExit(f"Destination API not ok: {data}")
+          items=data.get('destinations') or []
+          if len(items) < 25: raise SystemExit(f"Too few Golfpassi destination points: {len(items)}")
+          for item in items:
+              for key in ('place','country','lat','lon','tripCount'):
+                  if item.get(key) is None or item.get(key)=='': raise SystemExit(f"Destination missing {key}: {item}")
+          exact=sum(x.get('accuracy')=='exact' for x in items)
+          print(f"Verified {len(items)} Golfpassi destination points; {exact} exact")
+          if exact < int(len(items)*0.8): raise SystemExit(f"Too many approximate destination points: {exact}/{len(items)}")
           PY
 
       - name: Verify profile avatar resolver
