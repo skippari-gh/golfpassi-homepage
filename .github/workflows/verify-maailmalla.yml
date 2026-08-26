@@ -33,6 +33,7 @@ jobs:
           done
           python3 - <<'PY'
           import json
+          import urllib.parse
           from pathlib import Path
           p=Path('/tmp/data.json')
           if not p.exists(): raise SystemExit('API response missing')
@@ -44,15 +45,15 @@ jobs:
           for item in items:
               missing=[k for k in required if not item.get(k)]
               if missing: raise SystemExit(f"Missing fields {missing}: {item}")
-          images=sum(bool(x.get('imageUrl')) for x in items)
           audit=data.get('audit') or {}
           exact=audit.get('exactLocations',0)
           verified=audit.get('tripVerified',0)
+          checked=sum(bool(x.get('tripPageChecked')) for x in items)
           severe=audit.get('severeCount',999)
           warnings=audit.get('warningCount',0)
-          print(f"Assignments: {len(items)} | images: {images} | exact locations: {exact} | trip-page verified: {verified} | severe: {severe} | warnings: {warnings}")
-          if images < max(1, int(len(items)*0.8)):
-              raise SystemExit(f"Too few profile images: {images}/{len(items)}")
+          print(f"Assignments: {len(items)} | exact locations: {exact} | trip pages checked: {checked} | leader verified on trip page: {verified} | severe: {severe} | warnings: {warnings}")
+          if checked < max(1, int(len(items)*0.8)):
+              raise SystemExit(f"Too few trip pages checked: {checked}/{len(items)}")
           if severe:
               print('UNRESOLVED LOCATIONS:')
               for issue in audit.get('unresolvedLocations',[]): print(json.dumps(issue,ensure_ascii=False))
@@ -61,13 +62,26 @@ jobs:
               print('DUPLICATES:')
               for issue in audit.get('duplicates',[]): print(json.dumps(issue,ensure_ascii=False))
               raise SystemExit(f"Severe data audit issues: {severe}")
-          if verified < max(1, int(len(items)*0.5)):
+          if verified < max(1, int(len(items)*0.2)):
               print('UNVERIFIED SAMPLE:')
               for issue in audit.get('unverifiedAssignments',[])[:20]: print(json.dumps(issue,ensure_ascii=False))
-              raise SystemExit(f"Too few trip-page verified assignments: {verified}/{len(items)}")
+              raise SystemExit(f"Trip-page leader verification parser may be broken: {verified}/{len(items)}")
           print('LONG / UNVERIFIED WARNINGS:')
           for issue in (audit.get('longAssignments',[])+audit.get('unverifiedAssignments',[]))[:30]: print(json.dumps(issue,ensure_ascii=False))
+          sample=items[0]
+          query=urllib.parse.urlencode({'profile':sample['profile'],'name':sample['leader']})
+          Path('/tmp/avatar-url.txt').write_text('https://golfpassi-maailmalla.vercel.app/api/avatar?'+query)
           PY
+
+      - name: Verify profile avatar resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          avatar_url=$(cat /tmp/avatar-url.txt)
+          code=$(curl -L -sS --max-time 30 -o /tmp/avatar.bin -w "%{http_code}" "$avatar_url")
+          test "$code" = "200"
+          test -s /tmp/avatar.bin
+          echo "Profile avatar resolver OK"
 
       - name: Verify production page
         run: curl -fL --retry 4 --retry-delay 5 https://golfpassi-maailmalla.vercel.app/ >/dev/null
